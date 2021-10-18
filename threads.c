@@ -1,6 +1,10 @@
 //
 //  threads.c
+//  
+//
 //  Created by Scott Brandt on 5/6/13.
+//
+//
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,7 +16,10 @@ static ucontext_t ctx[3];
 
 static void test_thread(void);
 static int thread = 0;
+static int thread_couter = 1;
 void thread_exit(int);
+int thread_yield();
+int thread_create(void (*)(void));
 
 // This is the main thread
 // In a real program, it should probably start all of the threads and then wait for them to finish
@@ -28,12 +35,16 @@ int main(void) {
     printf("Main returned from thread_create\n");
 
     // Loop, doing a little work then yielding to the other thread
-    while(1) {
+    int counter = 0;
+    while (counter < 10)
+    {
         printf("Main calling thread_yield\n");
         
         thread_yield();
         
         printf("Main returned from thread_yield\n");
+
+        counter += 1;
     }
 
     // We should never get here
@@ -63,8 +74,10 @@ int thread_yield() {
     int old_thread = thread;
     
     // This is the scheduler, it is a bit primitive right now
-    thread = 1-thread;
-
+    if(thread + 1 > 2)
+        thread = 0;
+    else
+        thread += 1;
     printf("Thread %d yielding to thread %d\n", old_thread, thread);
     printf("Thread %d calling swapcontext\n", old_thread);
     
@@ -76,9 +89,10 @@ int thread_yield() {
 }
 
 // Create a thread
-int thread_create(int (*thread_function)(void)) {
-    int newthread = 1-thread;
-    
+int thread_create(void (*thread_function)(void)) {
+    int newthread = thread_couter;
+    thread_couter += 1;
+
     printf("Thread %d in thread_create\n", thread);
     
     printf("Thread %d calling getcontext and makecontext\n", thread);
