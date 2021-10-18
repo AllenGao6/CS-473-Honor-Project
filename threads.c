@@ -31,6 +31,7 @@ int main(void) {
 
     // Start one other thread
     thread_create(&test_thread);
+    thread_create(&test_thread);
     
     printf("Main returned from thread_create\n");
 
