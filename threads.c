@@ -6,16 +6,24 @@
 
 #define _XOPEN_SOURCE
 #include <ucontext.h>
-#define MAX_THREAD 4
 
-static ucontext_t ctx[MAX_THREAD];
-typedef uint ctxIdx;
-static ctxIdx active_thread = 0;
-static ctxIdx thread_count = 0;
+#define MAX_THREAD 50
+
+struct Thread {
+    void *next;
+    ucontext_t thread;
+    int thread_num;
+};
+
+int thread_counter = 0;
+struct Thread *ready_head = NULL;
+struct Thread *ready_tail = NULL;
+
+struct Thread *running = NULL;
 
 static void test_thread(void);
 void thread_exit(int);
-int thread_yield(ctxIdx nextCtx);
+int thread_yield();
 int thread_create(void (*thread_function)(void));
 
 
@@ -37,9 +45,7 @@ int main(void) {
 
     printf("Main calling thread_yield\n");
     
-    thread_yield(1); printf("\n");
-    thread_yield(2); printf("\n");
-    thread_yield(3); printf("\n");
+
     
     printf("Main returned from thread_yield\n");
 
@@ -61,50 +67,68 @@ static void test_thread(void) {
 }
 
 // Yield to another thread
-int thread_yield(ctxIdx nextCtx) {
-    int old_thread = active_thread;
+int thread_yield() {
+    int old_thread = running->thread_num;
     
     // This is the scheduler, it is a bit primitive right now
-    active_thread = nextCtx;
+    if(ready_head != NULL && ready_tail != NULL){
+        ready_tail->next = running;
+        ready_tail = ready_tail->next;
+        //switch head to the first element in ready queue
+        running = ready_head;
+        ready_head = ready_head->next;
+    }
 
-    printf("Thread %d yielding to thread %d\n", old_thread, active_thread);
+    printf("Thread %d yielding to thread %d\n", old_thread, running->thread_num);
     printf("Thread %d calling swapcontext\n", old_thread);
     
     // This will stop us from running and restart the other thread
-    swapcontext(&ctx[old_thread], &ctx[active_thread]);
+    swapcontext(&ready_tail->thread, &running->thread);
 
     // The other thread yielded back to us
-    printf("Thread %d back in thread_yield\n", active_thread);
+    printf("Thread %d back in thread_yield\n", running->thread_num);
 }
 
 // Create a thread
 int thread_create(void (*thread_function)(void)) {
-    if (thread_count + 1 >= MAX_THREAD) return -1;
+    if ((thread_counter + 1) >= MAX_THREAD) return -1;
 
-    thread_count++;
-    int newthread = thread_count;
+    thread_counter++;
+
+    ucontext_t new_context;
+    struct Thread new_thread = {
+        NULL, new_context, thread_counter
+    };
+
+    // if there is not element in ready queue
+    if(ready_head == NULL && ready_tail == NULL){
+        ready_head = &new_thread;
+        ready_tail = &new_thread;
+    }else{
+        ready_tail->next = &new_thread;
+    }
+
+    printf("Thread %d in thread_create, new thread: %d\n", running->thread_num, new_thread.thread_num);
     
-    printf("Thread %d in thread_create, new thread: %d\n", active_thread, newthread);
-    
-    printf("Thread %d calling getcontext and makecontext\n", active_thread);
+    printf("Thread %d calling getcontext and makecontext\n", running->thread_num);
 
     // First, create a valid execution context the same as the current one
-    getcontext(&ctx[newthread]);
+    getcontext(&new_context);
 
     // Now set up its stack
-    ctx[newthread].uc_stack.ss_sp = malloc(8192);
-    ctx[newthread].uc_stack.ss_size = 8192;
+    new_context.uc_stack.ss_sp = malloc(8192);
+    new_context.uc_stack.ss_size = 8192;
 
     // This is the context that will run when this thread exits
-    ctx[newthread].uc_link = &ctx[active_thread];
+    //new_context.uc_link = &ctx[active_thread];
 
     // Now create the new context and specify what function it should run
-    makecontext(&ctx[newthread], test_thread, 0);
+    makecontext(&new_context, test_thread, 0);
     
-    printf("Thread %d done with thread_create\n", active_thread);
+    printf("Thread %d done with thread_create\n", running->thread_num);
 }
 
 // This doesn't do anything at present
 void thread_exit(int status) {
-    printf("Thread %d exiting\n", active_thread);
+    printf("Thread %d exiting\n", running->thread_num);
 }
