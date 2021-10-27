@@ -10,7 +10,7 @@
 #define MAX_THREAD 50
 
 struct Thread {
-    void *next;
+    struct Thread *next;
     ucontext_t context;
     int thread_id;
 };
@@ -18,6 +18,9 @@ struct Thread {
 int thread_counter = 0;
 struct Thread *ready_head = NULL;
 struct Thread *ready_tail = NULL;
+
+struct Thread *block_head = NULL;
+struct Thread *block_tail = NULL;
 
 struct Thread *running = NULL;
 
@@ -70,6 +73,31 @@ static void test_thread(void) {
     printf("Test_thread returned from thread_yield\n");
     
     thread_exit(0);
+}
+
+//block the running thread due to some events
+void thread_block(){
+
+    //if block queue is empty
+    if(block_head == NULL && block_tail == NULL){
+        block_head = running;
+        block_tail = running;
+    }else{
+        block_tail->next = running;
+        block_tail = block_tail->next;
+    }
+
+    //move the first in ready queue to the running queue
+    if(ready_head != NULL && ready_tail != NULL){
+        running = ready_head;
+        ready_head = ready_head->next;
+        if(ready_head == NULL)
+            ready_tail == NULL;
+        running->next = NULL;
+    }else{
+        running = NULL;
+        printf("No thread is ready queue");
+    }
 }
 
 // Yield to another thread
