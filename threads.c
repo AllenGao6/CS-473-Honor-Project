@@ -3,9 +3,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #define _XOPEN_SOURCE
 #include <ucontext.h>
+//#include <mintomic/mintomic.h>
 
 #define MAX_THREAD 50
 
@@ -19,16 +21,31 @@ int thread_counter = 0;
 struct Thread *ready_head = NULL;
 struct Thread *ready_tail = NULL;
 
-struct Thread *block_head = NULL;
-struct Thread *block_tail = NULL;
 
 struct Thread *running = NULL;
+
+//test variable
+static int test_var = 0;
 
 static void test_thread(void);
 void thread_exit(int);
 void thread_yield();
 int thread_create(void (*thread_function)(void));
 
+struct __lock_t {
+    int flag; // we should use atomic operation for this int flag here, because we don't want this variable to be a data race between different thread.
+    //Weisheng, why don't you do some searches and put the load and store operation for flag variable in atomic operation.
+    // #include <mintomic/mintomic.h> is an option
+
+    
+    struct Thread *block_head;
+    struct Thread *block_tail;
+} lock_default = {0, NULL, NULL};
+
+typedef struct __lock_t lock_t;
+
+
+lock_t lock1;
 
 // This is the main thread
 // In a real program, it should probably start all of the threads and then wait for them to finish
@@ -54,51 +71,80 @@ int main(void) {
     printf("Main returned from thread_create\n");
 
     printf("Main calling thread_yield\n");
-    
-    thread_yield();
-    
+
+    int count = 0;
+    while (count < 20)
+    {
+        thread_yield();
+        sleep(0.5);
+        count += 1;
+    }
+
     printf("Main returned from thread_yield\n");
 
     exit(0);
 }
 
+static TestAndSet(lock_t * lock){
+    int rv = lock->flag;
+    lock->flag = 1;
+    return rv;
+}
+
+static void lock(lock_t * lock){
+    while(1){
+        while(TestAndSet(lock));
+        break;
+    }
+}
+
+static void unlock(lock_t * lock){
+    lock->flag = 0;
+}
+
 // This is the thread that gets started by thread_create
 static void test_thread(void) {
     printf("In test_thread\n");
-        
+    sleep(1);
     printf("Test_thread calling thread_yield\n");
-    
-    thread_yield();
-    
+
+    //adding lock
+    lock(&lock1);
+    //critical section
+    test_var += 1;
+    //unlocking
+    unlock(&lock1);
+
     printf("Test_thread returned from thread_yield\n");
-    
+
     thread_exit(0);
 }
 
+
 //block the running thread due to some events
-void thread_block(){
+// void thread_block(){
 
-    //if block queue is empty
-    if(block_head == NULL && block_tail == NULL){
-        block_head = running;
-        block_tail = running;
-    }else{
-        block_tail->next = running;
-        block_tail = block_tail->next;
-    }
+//     //if block queue is empty
+//     if(block_head == NULL && block_tail == NULL){
+//         block_head = running;
+//         block_tail = running;
+//     }else{
+//         block_tail->next = running;
+//         block_tail = block_tail->next;
+//     }
 
-    //move the first in ready queue to the running queue
-    if(ready_head != NULL && ready_tail != NULL){
-        running = ready_head;
-        ready_head = ready_head->next;
-        if(ready_head == NULL)
-            ready_tail == NULL;
-        running->next = NULL;
-    }else{
-        running = NULL;
-        printf("No thread is ready queue");
-    }
-}
+//     //move the first in ready queue to the running queue
+//     if(ready_head != NULL && ready_tail != NULL){
+//         running = ready_head;
+//         ready_head = ready_head->next;
+//         if(ready_head == NULL)
+//             ready_tail == NULL;
+//         running->next = NULL;
+//     }else{
+//         running = NULL;
+//         printf("No thread is ready queue");
+//     }
+// }
 
 // Yield to another thread
 void thread_yield() {
