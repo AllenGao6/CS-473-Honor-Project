@@ -4,48 +4,93 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 #define _XOPEN_SOURCE
 #include <ucontext.h>
-//#include <mintomic/mintomic.h>
+#include <stdatomic.h>
 
 #define MAX_THREAD 50
+#define LOCK_INIT {ATOMIC_FLAG_INIT, NULL, NULL}
 
+///////// Type Defination //////////
 struct Thread {
     struct Thread *next;
     ucontext_t context;
     int thread_id;
 };
 
+struct __lock_t {
+    atomic_flag flag;
+    
+    struct Thread *block_head;
+    struct Thread *block_tail;
+};
+
+typedef struct __lock_t lock_t;
+
+//////// Global Variable ///////////
 int thread_counter = 0;
 struct Thread *ready_head = NULL;
 struct Thread *ready_tail = NULL;
-
-
 struct Thread *running = NULL;
 
 //test variable
 static int test_var = 0;
 
+////// Function Declaration ////////
 static void test_thread(void);
 void thread_exit(int);
 void thread_yield();
 int thread_create(void (*thread_function)(void));
 
-struct __lock_t {
-    int flag; // we should use atomic operation for this int flag here, because we don't want this variable to be a data race between different thread.
-    //Weisheng, why don't you do some searches and put the load and store operation for flag variable in atomic operation.
-    // #include <mintomic/mintomic.h> is an option
+void enqueue(struct Thread **head, struct Thread **tail, struct Thread* newT);
+struct Thread* dequeue(struct Thread **head, struct Thread **tail);
 
-    
-    struct Thread *block_head;
-    struct Thread *block_tail;
-} lock_default = {0, NULL, NULL};
+static void lock(lock_t *lock)
+{
+    enqueue(&lock->block_head, &lock->block_tail, running);
 
-typedef struct __lock_t lock_t;
+    // loop until block clear
+    while (atomic_flag_test_and_set(&lock->flag))
+    {
+        if (ready_head != NULL && ready_tail != NULL)
+        {
+            // put the running thread to blocing queue
+            struct Thread* old_thread = running;
 
+            // then yield to another thread at ready queue
+            running = dequeue(&ready_head, &ready_tail);
 
-lock_t lock1;
+            printf("thread %d blocked: yield to head of ready queue - thread %d\n", 
+                old_thread->thread_id,running->thread_id);
+            swapcontext(&old_thread->context, &running->context);
+        }
+    }
+}
+
+static void unlock(lock_t *lock)
+{
+    atomic_flag_clear(&lock->flag);
+
+    // yield to the head of blocking queue
+    if (lock->block_head != NULL)
+    {
+        struct Thread* old_thread = running;
+        enqueue(&ready_head, &ready_tail, old_thread);
+
+        running = dequeue(&lock->block_head, &lock->block_tail);
+
+        printf("thread %d unlock: yield to head of block queue %d\n", 
+            old_thread->thread_id,running->thread_id);
+        swapcontext(&old_thread->context, &running->context);
+    } else
+    {
+        printf("thread %d unlock and continue: empty block queue\n", running->thread_id);
+    }
+}
+
+lock_t lock1 = LOCK_INIT;
 
 // This is the main thread
 // In a real program, it should probably start all of the threads and then wait for them to finish
@@ -72,100 +117,52 @@ int main(void) {
 
     printf("Main calling thread_yield\n");
 
-    int count = 0;
-    while (count < 20)
-    {
-        thread_yield();
-        sleep(0.5);
-        count += 1;
-    }
+    thread_yield();
+    thread_yield();
+    thread_yield();
 
     printf("Main returned from thread_yield\n");
 
     exit(0);
 }
 
-static TestAndSet(lock_t * lock){
-    int rv = lock->flag;
-    lock->flag = 1;
-    return rv;
-}
-
-static void lock(lock_t * lock){
-    while(1){
-        while(TestAndSet(lock));
-        break;
-    }
-}
-
-static void unlock(lock_t * lock){
-    lock->flag = 0;
-}
-
 // This is the thread that gets started by thread_create
 static void test_thread(void) {
     printf("In test_thread\n");
-    sleep(1);
-    printf("Test_thread calling thread_yield\n");
 
     //adding lock
     lock(&lock1);
+    printf("Thread %d entering the critical section.\n", running->thread_id);
     //critical section
-    test_var += 1;
+    for (int i = 0; i < 5000; i++)
+        test_var += 1;
+
+    printf("Test_thread calling thread_yield\n");
+    thread_yield();
+
+    for (int i = 0; i < 5000; i++)
+        test_var += 1;
+
     //unlocking
     unlock(&lock1);
 
-    printf("Test_thread returned from thread_yield\n");
+    printf("Exiting critical section. test_val: %d\n", test_var);
 
     thread_exit(0);
 }
 
-
-//block the running thread due to some events
-// void thread_block(){
-
-//     //if block queue is empty
-//     if(block_head == NULL && block_tail == NULL){
-//         block_head = running;
-//         block_tail = running;
-//     }else{
-//         block_tail->next = running;
-//         block_tail = block_tail->next;
-//     }
-
-//     //move the first in ready queue to the running queue
-//     if(ready_head != NULL && ready_tail != NULL){
-//         running = ready_head;
-//         ready_head = ready_head->next;
-//         if(ready_head == NULL)
-//             ready_tail == NULL;
-//         running->next = NULL;
-//     }else{
-//         running = NULL;
-//         printf("No thread is ready queue");
-//     }
-// }
-
 // Yield to another thread
 void thread_yield() {
-    struct Thread* old_thread = running;
-    
-    // This is the scheduler, it is a bit primitive right now
-    if(ready_head != NULL && ready_tail != NULL){
-        // add running thread to the end of ready queue
-        ready_tail->next = running;
-        ready_tail = ready_tail->next;
-
-        // switch running thread to the head of ready queue
-        running = ready_head;
-        ready_head = ready_head->next;
-    } else {
+    if (ready_head == NULL && ready_tail == NULL) {
         printf("Ready Queue is empty, return from yield()\n");
         return;
     }
+    struct Thread* old_thread = running;
+    enqueue(&ready_head, &ready_tail, old_thread);
+    
+    running = dequeue(&ready_head, &ready_tail);
 
     printf("Thread %d yielding to thread %d\n", old_thread->thread_id, running->thread_id);
-    printf("Thread %d calling swapcontext\n", old_thread->thread_id);
     
     // This will stop us from running and restart the other thread
     swapcontext(&old_thread->context, &running->context);
@@ -182,15 +179,7 @@ int thread_create(void (*thread_function)(void)) {
 
     struct Thread *new_thread = malloc(sizeof(struct Thread));
     new_thread->thread_id = thread_counter;
-
-    // if there is not element in ready queue
-    if(ready_head == NULL && ready_tail == NULL){
-        ready_head = new_thread;
-        ready_tail = new_thread;
-    }else{
-        ready_tail->next = new_thread;
-        ready_tail = ready_tail->next;
-    }
+    enqueue(&ready_head, &ready_tail, new_thread);
 
     printf("Thread %d in thread_create, new thread: %d\n", running->thread_id, new_thread->thread_id);
     
@@ -214,6 +203,7 @@ int thread_create(void (*thread_function)(void)) {
 // exit the current thread and delete its context 
 void thread_exit(int status) {
     printf("Thread %d exiting\n", running->thread_id);
+    thread_yield();
     /*
     // free the thread block
     struct Thread* return_thread = running->context.uc_link;
@@ -222,4 +212,36 @@ void thread_exit(int status) {
     // return to the thread pointed by uclink
     setcontext(return_thread);
     */
+}
+
+void enqueue(struct Thread **head, struct Thread **tail, struct Thread* newT)
+{
+    newT->next = NULL;
+
+    if (*head == NULL && *tail == NULL)
+    {
+        *head = newT;
+        *tail = newT;
+    } else 
+    {
+        (*tail)->next = newT;
+        *tail = (*tail)->next;
+    }
+}
+
+struct Thread* dequeue(struct Thread **head, struct Thread **tail)
+{
+    if (head == NULL && tail == NULL)
+        return NULL;
+    else
+    {
+        struct Thread* removed_blk = *head;
+        *head = (*head)->next;
+        removed_blk->next = NULL;
+
+        // edge case: remove the last element in the queue
+        if (*head == NULL) *tail = NULL;
+
+        return removed_blk;
+    }
 }
