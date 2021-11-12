@@ -80,7 +80,7 @@ struct Thread* dequeue(struct Thread **head, struct Thread **tail);
  }                                              \
 }
 
-void thread_init(pthread_t thread[], threadparm_t gData[]) {
+void thread_init(pthread_t *thread, threadparm_t *gData) {
     
 
     printf("Create/start threads\n");
@@ -208,7 +208,7 @@ int main(void) {
     threadparm_t gData[NUM_VIRTUAL_THREADS];
 
     // initialize pthread as virtual thread to handle the ready_queue
-    thread_init(&thread[0], &gData[0]);
+    thread_init(thread, gData);
 
     // ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
 
