@@ -29,39 +29,42 @@ void bar(void);
  
 __thread int TLS_data1;
 __thread int TLS_data2;
- 
+__thread int Thread_ID;
+
 #define                 NUMTHREADS   2 
 
 typedef struct {
    int   data1;
    int   data2;
-} threadparm_t; 
+   int id;
+} threadparm_t;
 
 void *theThread(void *parm)
 {
    int               rc;
    threadparm_t     *gData;
 
-   printf("Thread %.16llx: Entered\n", pthread_getthreadid_np());
 
    gData = (threadparm_t *)parm;
 
    TLS_data1 = gData->data1;
    TLS_data2 = gData->data2;
+   Thread_ID = gData->id;
+   printf("Thread %d: Entered\n", Thread_ID);
 
    foo();
    return NULL;
 }
  
 void foo() {
-   printf("Thread %.16llx: foo(), TLS data=%d %d\n",
-          pthread_getthreadid_np(), TLS_data1, TLS_data2);
+   printf("Thread %d: foo(), TLS data=%d %d\n",
+          Thread_ID, TLS_data1, TLS_data2);
    bar();
 }
  
 void bar() {
-   printf("Thread %.16llx: bar(), TLS data=%d %d\n",
-          pthread_getthreadid_np(), TLS_data1, TLS_data2);
+   printf("Thread %d: bar(), TLS data=%d %d\n",
+          Thread_ID, TLS_data1, TLS_data2);
    return;
 }
  
@@ -80,6 +83,7 @@ int main(int argc, char **argv)
      /* Create per-thread TLS data and pass it to the thread */
      gData[i].data1 = i;
      gData[i].data2 = (i+1)*2;
+     gData[i].id = i+1;
      rc = pthread_create(&thread[i], NULL, theThread, &gData[i]);
      checkResults("pthread_create()\n", rc);
   }
