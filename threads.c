@@ -73,7 +73,7 @@ struct Thread* dequeue(struct Thread **head, struct Thread **tail);
 
 ///////// Function Definition ////////
 
-static void checkResults(string, val) {             
+static void checkResults(char string, int val) {             
  if (val) {                                     
    printf("Failed with %d at %s", val, string);                                    
  }                                              
