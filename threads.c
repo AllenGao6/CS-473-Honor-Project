@@ -49,7 +49,6 @@ struct Thread* dequeue(struct Thread **head, struct Thread **tail);
 
 static void lock(lock_t *lock)
 {
-    enqueue(&lock->block_head, &lock->block_tail, running);
 
     // loop until block clear
     while (atomic_flag_test_and_set(&lock->flag))
@@ -59,6 +58,7 @@ static void lock(lock_t *lock)
             // put the running thread to blocing queue
             struct Thread* old_thread = running;
 
+            enqueue(&lock->block_head, &lock->block_tail, running);
             // then yield to another thread at ready queue
             running = dequeue(&ready_head, &ready_tail);
 
