@@ -50,6 +50,8 @@ struct Thread *running = NULL;
 // Thread local variable
 __thread int thread_id;
 __thread struct Thread *thread_running;
+pthread_mutex_t mutex_queue = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t queue_non_empty = PTHREAD_COND_INITIALIZER;
 
 //test variable
 static int test_var = 0;
@@ -78,7 +80,7 @@ struct Thread* dequeue(struct Thread **head, struct Thread **tail);
  }                                              \
 }
 
-void thread_init(pthread_t *thread, threadparm_t *gData) {
+void thread_init(pthread_t thread[], threadparm_t gData[]) {
     
 
     printf("Create/start threads\n");
@@ -115,29 +117,34 @@ void *virtual_thread(void *parm){
     thread_id = gData->id;
     thread_running = NULL;
 
-    while(!is_terminated && test_var < 100) {
-        // add conditioning variable here to check if the ready queue is empty
-        if (ready_head == NULL) {
-            printf("Virtual thread %d is waiting\n", thread_id);
-            thread_yield();
+    while(!is_terminated) {
+
+        pthread_mutex_lock(&mutex_queue);
+
+        while(ready_head == NULL) {
+            // add conditioning variable here to check if the ready queue is empty
+            pthread_cond_wait(&queue_non_empty, &mutex_queue);
         }
-        else {
-            // dequeue the first thread in the ready queue
-            thread_running = dequeue(&ready_head, &ready_tail);
-            printf("Virtual thread %d is running\n", thread_running->thread_id);
-            // set the context of the running thread
-            setcontext(&thread_running->context);
-        }
-        
+
+        // dequeue the first thread in the ready queue
+        thread_running = dequeue(&ready_head, &ready_tail);
+        printf("Virtual thread %d is running\n", thread_running->thread_id);
+        // set the context of the running thread
+        setcontext(&thread_running->context);
+
         printf("Virtual Thread %d is running\n", thread_id);
         printf("test_var: %d\n", test_var);
         test_var++;
         thread_yield();
+
+        // unlock the mutex
+        pthread_mutex_unlock(&mutex_queue);
+        
     }
     printf("Virtual Thread %d is exiting\n", thread_id);
 }
 
-static void lock(lock_t *lock)
+void lock(lock_t *lock)
 {
 
     // loop until block clear
@@ -159,7 +166,7 @@ static void lock(lock_t *lock)
     }
 }
 
-static void unlock(lock_t *lock)
+void unlock(lock_t *lock)
 {
     atomic_flag_clear(&lock->flag);
 
@@ -195,13 +202,13 @@ int main(void) {
     // master_thread->next = NULL;
     // master_thread->thread_id = 0;
 
-    
+  
     // initialize the thread parameter for each thread
     pthread_t thread[NUM_VIRTUAL_THREADS];
     threadparm_t gData[NUM_VIRTUAL_THREADS];
 
     // initialize pthread as virtual thread to handle the ready_queue
-    thread_init(&thread, &gData);
+    thread_init(&thread[0], &gData[0]);
 
     // ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
 
