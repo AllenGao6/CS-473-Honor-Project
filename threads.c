@@ -73,11 +73,10 @@ struct Thread* dequeue(struct Thread **head, struct Thread **tail);
 
 ///////// Function Definition ////////
 
-#define checkResults(string, val) {             \
- if (val) {                                     \
-   printf("Failed with %d at %s", val, string); \
-   exit(1);                                     \
- }                                              \
+static void checkResults(string, val) {             
+ if (val) {                                     
+   printf("Failed with %d at %s", val, string);                                    
+ }                                              
 }
 
 void thread_init(pthread_t *thread, threadparm_t *gData) {
