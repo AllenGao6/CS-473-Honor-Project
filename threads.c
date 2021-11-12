@@ -88,6 +88,7 @@ void thread_init(pthread_t *thread, threadparm_t *gData) {
         /* Create per-thread TLS data and pass it to the thread */
         gData[i].id = i+1;
         int rc = pthread_create(&thread[i], NULL, virtual_thread, &gData[i]);
+        printf("Thread %d created\n", i);
         checkResults("pthread_create()\n", rc);
     }
  
