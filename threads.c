@@ -1,5 +1,7 @@
 //  threads.c
-//  Created by Scott Brandt on 5/6/13.
+// Allen Gao, Weisheng Li's Honor Project
+
+#define _MULTI_THREADED
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,8 +11,11 @@
 #define _XOPEN_SOURCE
 #include <ucontext.h>
 #include <stdatomic.h>
+#include <pthread.h>
+
 
 #define MAX_THREAD 50
+#define NUM_VIRTUAL_THREADS 3
 #define LOCK_INIT {ATOMIC_FLAG_INIT, NULL, NULL}
 
 ///////// Type Defination //////////
@@ -26,14 +31,27 @@ struct __lock_t {
     struct Thread *block_head;
     struct Thread *block_tail;
 };
+// parameter for virtual thread to set up their local variable
+typedef struct {
+   int id;
+
+} threadparm_t;
 
 typedef struct __lock_t lock_t;
+
+static bool is_terminated = false;
 
 //////// Global Variable ///////////
 int thread_counter = 0;
 struct Thread *ready_head = NULL;
 struct Thread *ready_tail = NULL;
 struct Thread *running = NULL;
+
+// Thread local variable
+__thread int thread_id;
+__thread struct Thread *thread_running;
+pthread_mutex_t mutex_queue = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t queue_non_empty = PTHREAD_COND_INITIALIZER;
 
 //test variable
 static int test_var = 0;
@@ -43,12 +61,92 @@ static void test_thread(void);
 void thread_exit(int);
 void thread_yield();
 int thread_create(void (*thread_function)(void));
-
+void thread_init();
+void lock(lock_t *lock);
+void unlock(lock_t *lock);
+void *virtual_thread(void *arg);
+void task_thread_init();
+// queue functions declaration
 void enqueue(struct Thread **head, struct Thread **tail, struct Thread* newT);
 struct Thread* dequeue(struct Thread **head, struct Thread **tail);
 
-static void lock(lock_t *lock)
-{   
+
+///////// Function Definition ////////
+
+static void checkResults(char string, int val) {             
+ if (val) {                                     
+   printf("Failed with %d at %s", val, string);                                    
+ }                                              
+}
+
+void thread_init(pthread_t *thread, threadparm_t *gData) {
+    
+
+    printf("Create/start threads\n");
+    for (int i=0; i < NUM_VIRTUAL_THREADS; i++) { 
+        /* Create per-thread TLS data and pass it to the thread */
+        gData[i].id = i+1;
+        int rc = pthread_create(&thread[i], NULL, virtual_thread, &gData[i]);
+        printf("Thread %d created\n", i);
+        checkResults("pthread_create()\n", rc);
+    }
+ 
+}
+
+void task_thread_init() {
+
+    // Start one other thread
+    thread_create(&test_thread); // thread 1
+    // sleep for 1 second
+    thread_create(&test_thread); // thread 2
+    thread_create(&test_thread); // thread 3
+    
+    printf("Main returned from thread_create\n");
+
+    printf("Main calling thread_yield\n");
+
+    thread_yield();
+    thread_yield();
+    thread_yield();
+}
+
+void *virtual_thread(void *parm){
+    // recieve the thread parameter
+    threadparm_t *gData;
+    gData = (threadparm_t *)parm;
+    thread_id = gData->id;
+    thread_running = NULL;
+
+    while(!is_terminated) {
+
+        pthread_mutex_lock(&mutex_queue);
+
+        while(ready_head == NULL) {
+            // add conditioning variable here to check if the ready queue is empty
+            pthread_cond_wait(&queue_non_empty, &mutex_queue);
+        }
+
+        // dequeue the first thread in the ready queue
+        thread_running = dequeue(&ready_head, &ready_tail);
+        printf("Virtual thread %d is running\n", thread_running->thread_id);
+        // set the context of the running thread
+        setcontext(&thread_running->context);
+
+        printf("Virtual Thread %d is running\n", thread_id);
+        printf("test_var: %d\n", test_var);
+        test_var++;
+        thread_yield();
+
+        // unlock the mutex
+        pthread_mutex_unlock(&mutex_queue);
+        
+    }
+    printf("Virtual Thread %d is exiting\n", thread_id);
+}
+
+void lock(lock_t *lock)
+{
+
     // loop until block clear
     while (atomic_flag_test_and_set(&lock->flag))
     {
@@ -72,7 +170,7 @@ static void lock(lock_t *lock)
     }
 }
 
-static void unlock(lock_t *lock)
+void unlock(lock_t *lock)
 {
     atomic_flag_clear(&lock->flag);
 
@@ -102,31 +200,36 @@ int main(void) {
     printf("Main starting\n");
     
     // create thread for main itself
-    struct Thread *master_thread = malloc(sizeof(struct Thread));
-    getcontext(&(master_thread->context));
-    master_thread->next = NULL;
-    master_thread->thread_id = 0;
+    // Do we want to use main as a thread itself? I am thinking we can use main as a control center to manage other threads
+    // struct Thread *master_thread = malloc(sizeof(struct Thread));
+    // getcontext(&(master_thread->context));
+    // master_thread->next = NULL;
+    // master_thread->thread_id = 0;
 
-    running = master_thread;
-    
-    printf("Main calling thread_create\n");
+  
+    // initialize the thread parameter for each thread
+    pthread_t thread[NUM_VIRTUAL_THREADS];
+    threadparm_t gData[NUM_VIRTUAL_THREADS];
 
-    // Start one other thread
-    thread_create(&test_thread); // thread 1
-    thread_create(&test_thread); // thread 2
-    thread_create(&test_thread); // thread 3
-    
-    printf("Main returned from thread_create\n");
+    // initialize pthread as virtual thread to handle the ready_queue
+    thread_init(thread, gData);
 
-    printf("Main calling thread_yield\n");
+    // ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
 
-    thread_yield();
-    thread_yield();
-    thread_yield();
+    printf("Main calling task thread_create\n");
 
-    printf("Main returned from thread_yield\n");
+    // create thread for task
+    task_thread_init();
 
-    exit(0);
+    // ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
+    printf("Wait for the threads to complete, and release their resources\n");
+    for (int i=0; i < NUM_VIRTUAL_THREADS; i++) {
+        int rc = pthread_join(thread[i], NULL);
+        checkResults("pthread_join()\n", rc);
+    }
+
+    printf("Main completed\n");
+    return 0;
 }
 
 // This is the thread that gets started by thread_create
@@ -206,16 +309,16 @@ int thread_create(void (*thread_function)(void)) {
 
 // exit the current thread and delete its context 
 void thread_exit(int status) {
-    printf("Thread %d exiting\n", running->thread_id);
-
-    /*
-    // free the thread block
-    struct Thread* return_thread = running->context.uc_link;
+    printf("Thread %d in thread_exit\n", running->thread_id);
+    // delete the context
+    free(running->context.uc_stack.ss_sp);
     free(running);
 
-    // return to the thread pointed by uclink
-    setcontext(return_thread);
-    */
+    // set the running thread to NULL
+    running = NULL;
+
+    // yield to another thread
+    thread_yield();
 }
 
 void enqueue(struct Thread **head, struct Thread **tail, struct Thread* newT)
