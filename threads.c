@@ -48,23 +48,26 @@ void enqueue(struct Thread **head, struct Thread **tail, struct Thread* newT);
 struct Thread* dequeue(struct Thread **head, struct Thread **tail);
 
 static void lock(lock_t *lock)
-{
-    enqueue(&lock->block_head, &lock->block_tail, running);
-
+{   
     // loop until block clear
     while (atomic_flag_test_and_set(&lock->flag))
     {
+        // put the running block to block queue if blocked
+        enqueue(&lock->block_head, &lock->block_tail, running);
+
+        // the ready queue shouldn't be empty
         if (ready_head != NULL && ready_tail != NULL)
         {
-            // put the running thread to blocing queue
+            // then yield to another thread at ready queue
             struct Thread* old_thread = running;
 
-            // then yield to another thread at ready queue
             running = dequeue(&ready_head, &ready_tail);
 
             printf("thread %d blocked: yield to head of ready queue - thread %d\n", 
                 old_thread->thread_id,running->thread_id);
             swapcontext(&old_thread->context, &running->context);
+        } else {
+            printf("ready queue should not be empty while the critical section is locked!\n");
         }
     }
 }
@@ -139,6 +142,7 @@ static void test_thread(void) {
 
     printf("Test_thread calling thread_yield\n");
     thread_yield();
+    printf("Thread %d return from yield.\n", running->thread_id);
 
     for (int i = 0; i < 5000; i++)
         test_var += 1;
@@ -203,7 +207,7 @@ int thread_create(void (*thread_function)(void)) {
 // exit the current thread and delete its context 
 void thread_exit(int status) {
     printf("Thread %d exiting\n", running->thread_id);
-    thread_yield();
+
     /*
     // free the thread block
     struct Thread* return_thread = running->context.uc_link;
