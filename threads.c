@@ -96,9 +96,14 @@ void thread_init(pthread_t *thread, threadparm_t *gData) {
 void task_thread_init() {
 
     // Start one other thread
+    printf("1");
     thread_create(&test_thread); // thread 1
+        printf("2");
+
     // sleep for 1 second
     thread_create(&test_thread); // thread 2
+        printf("3");
+
     thread_create(&test_thread); // thread 3
     
     printf("Main returned from thread_create\n");
@@ -280,6 +285,7 @@ void thread_yield() {
 
 // Create a thread
 int thread_create(void (*thread_function)(void)) {
+    printf("In thread_create\n");
     if ((thread_counter + 1) >= MAX_THREAD) return -1;
 
     thread_counter++;
