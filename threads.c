@@ -212,6 +212,10 @@ int main(void) {
     // master_thread->thread_id = 0;
 
   
+    printf("Main calling task thread_create\n");
+
+    // create thread for task
+    task_thread_init();
     // initialize the thread parameter for each thread
     pthread_t thread[NUM_VIRTUAL_THREADS];
     threadparm_t gData[NUM_VIRTUAL_THREADS];
@@ -221,10 +225,7 @@ int main(void) {
 
     // ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
 
-    printf("Main calling task thread_create\n");
-
-    // create thread for task
-    task_thread_init();
+    
 
     // ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
     printf("Wait for the threads to complete, and release their resources\n");
@@ -289,20 +290,20 @@ int thread_create(void (*thread_function)(void)) {
     if ((thread_counter + 1) >= MAX_THREAD) return -1;
 
     thread_counter++;
-    printf("1");
+    printf("1_");
     struct Thread *new_thread = malloc(sizeof(struct Thread));
     new_thread->thread_id = thread_counter;
     enqueue(&ready_head, &ready_tail, new_thread);
-    printf("2");
+    printf("2_");
 
     printf("Thread %d in thread_create, new thread: %d\n", running->thread_id, new_thread->thread_id);
     
     printf("Thread %d calling getcontext and makecontext\n", running->thread_id);
-    printf("3");
+    printf("3_");
 
     // First, create a valid execution context the same as the current one
     getcontext(&(new_thread->context));
-    printf("4");
+    printf("4_");
 
     // maybe we should set up uclink?
 
