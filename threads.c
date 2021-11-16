@@ -308,7 +308,7 @@ int thread_create(void (*thread_function)(void)) {
     new_thread->context.uc_stack.ss_size = 8192;
 
     // Now create the new context and specify what function it should run
-    makecontext(&(new_thread->context), test_thread, 0);
+    makecontext(&(new_thread->context), thread_function, 0);
     
     printf("Thread %d done with thread_create\n", running->thread_id);
 }
