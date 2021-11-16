@@ -289,17 +289,20 @@ int thread_create(void (*thread_function)(void)) {
     if ((thread_counter + 1) >= MAX_THREAD) return -1;
 
     thread_counter++;
-
+    printf("1");
     struct Thread *new_thread = malloc(sizeof(struct Thread));
     new_thread->thread_id = thread_counter;
     enqueue(&ready_head, &ready_tail, new_thread);
+    printf("2");
 
     printf("Thread %d in thread_create, new thread: %d\n", running->thread_id, new_thread->thread_id);
     
     printf("Thread %d calling getcontext and makecontext\n", running->thread_id);
+    printf("3");
 
     // First, create a valid execution context the same as the current one
     getcontext(&(new_thread->context));
+    printf("4");
 
     // maybe we should set up uclink?
 
