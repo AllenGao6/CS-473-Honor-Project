@@ -43,9 +43,9 @@ static bool is_terminated = false;
 
 //////// Global Variable ///////////
 static int thread_counter = 0;
-struct Thread *ready_head = NULL;
-struct Thread *ready_tail = NULL;
-struct Thread *running = NULL;
+static struct Thread *ready_head = NULL;
+static struct Thread *ready_tail = NULL;
+// struct Thread *running = NULL;
 
 // Thread local variable
 __thread int thread_id;
@@ -156,7 +156,7 @@ void lock(lock_t *lock)
     while (atomic_flag_test_and_set(&lock->flag))
     {
         // put the running block to block queue if blocked
-        enqueue(&lock->block_head, &lock->block_tail, running);
+        enqueue(&lock->block_head, &lock->block_tail, thread_running);
 
         // the ready queue shouldn't be empty
         if (ready_head != NULL && ready_tail != NULL)
