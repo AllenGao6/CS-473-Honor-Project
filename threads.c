@@ -204,6 +204,7 @@ lock_t lock1 = LOCK_INIT;
 int main(void) {
     printf("Main starting\n");
     
+    task_thread_init();
     // create thread for main itself
     // Do we want to use main as a thread itself? I am thinking we can use main as a control center to manage other threads
     // struct Thread *master_thread = malloc(sizeof(struct Thread));
@@ -224,7 +225,7 @@ int main(void) {
     printf("Main calling task thread_create\n");
 
     // create thread for task
-    task_thread_init();
+    //task_thread_init();
 
     // ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
     printf("Wait for the threads to complete, and release their resources\n");
@@ -311,7 +312,7 @@ int thread_create(void (*thread_function)(void)) {
     new_thread->context.uc_stack.ss_size = 8192;
 
     // Now create the new context and specify what function it should run
-    makecontext(&(new_thread->context), thread_function, 0);
+    makecontext(&(new_thread->context), test_thread, 0);
     
     printf("Thread %d done with thread_create\n", running->thread_id);
 }
