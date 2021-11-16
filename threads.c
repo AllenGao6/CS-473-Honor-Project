@@ -42,7 +42,7 @@ typedef struct __lock_t lock_t;
 static bool is_terminated = false;
 
 //////// Global Variable ///////////
-int thread_counter = 0;
+static int thread_counter = 0;
 struct Thread *ready_head = NULL;
 struct Thread *ready_tail = NULL;
 struct Thread *running = NULL;
@@ -139,9 +139,9 @@ void *virtual_thread(void *parm){
 
         printf("Virtual Thread %d is running\n", thread_id);
         printf("test_var: %d\n", test_var);
-        test_var++;
         // thread_yield();
-
+        enqueue(&ready_head, &ready_tail, thread_running);
+        thread_running = NULL;
         // unlock the mutex
         pthread_mutex_unlock(&mutex_queue);
         
@@ -253,19 +253,19 @@ static void test_thread(void) {
     for (int i = 0; i < 5000; i++)
         test_var += 1;
 
-    printf("Test_thread calling thread_yield\n");
+    // printf("Test_thread calling thread_yield\n");
 
-    printf("Thread %d return from yield.\n", thread_running->thread_id);
+    // printf("Thread %d return from yield.\n", thread_running->thread_id);
 
-    for (int i = 0; i < 5000; i++)
-        test_var += 1;
+    // for (int i = 0; i < 5000; i++)
+    //     test_var += 1;
 
     //unlocking
     unlock(&lock1);
 
     printf("Exiting critical section. test_val: %d\n", test_var);
 
-    thread_exit(0);
+    //thread_exit(0);
 }
 
 // Yield to another thread
