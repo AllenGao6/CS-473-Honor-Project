@@ -121,7 +121,7 @@ void *virtual_thread(void *parm){
     gData = (threadparm_t *)parm;
     thread_id = gData->id;
     thread_running = NULL;
-
+    printf("Thread %d initialized\n", thread_id);
     while(!is_terminated) {
 
         pthread_mutex_lock(&mutex_queue);
@@ -264,7 +264,7 @@ static void test_thread(void) {
     unlock(&lock1);
 
     printf("Exiting critical section. test_val: %d\n", test_var);
-
+    thread_yield();
     //thread_exit(0);
 }
 
