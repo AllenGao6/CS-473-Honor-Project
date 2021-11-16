@@ -140,7 +140,7 @@ void *virtual_thread(void *parm){
         printf("Virtual Thread %d is running\n", thread_id);
         printf("test_var: %d\n", test_var);
         test_var++;
-        thread_yield();
+        // thread_yield();
 
         // unlock the mutex
         pthread_mutex_unlock(&mutex_queue);
@@ -162,13 +162,13 @@ void lock(lock_t *lock)
         if (ready_head != NULL && ready_tail != NULL)
         {
             // then yield to another thread at ready queue
-            struct Thread* old_thread = running;
+            struct Thread* old_thread = thread_running;
 
-            running = dequeue(&ready_head, &ready_tail);
+            thread_running = dequeue(&ready_head, &ready_tail);
 
             printf("thread %d blocked: yield to head of ready queue - thread %d\n", 
-                old_thread->thread_id,running->thread_id);
-            swapcontext(&old_thread->context, &running->context);
+                old_thread->thread_id,thread_running->thread_id);
+            swapcontext(&old_thread->context, &thread_running->context);
         } else {
             printf("ready queue should not be empty while the critical section is locked!\n");
         }
@@ -182,17 +182,17 @@ void unlock(lock_t *lock)
     // yield to the head of blocking queue
     if (lock->block_head != NULL)
     {
-        struct Thread* old_thread = running;
+        struct Thread* old_thread = thread_running;
         enqueue(&ready_head, &ready_tail, old_thread);
 
-        running = dequeue(&lock->block_head, &lock->block_tail);
+        thread_running = dequeue(&lock->block_head, &lock->block_tail);
 
         printf("thread %d unlock: yield to head of block queue %d\n", 
-            old_thread->thread_id,running->thread_id);
-        swapcontext(&old_thread->context, &running->context);
+            old_thread->thread_id,thread_running->thread_id);
+        swapcontext(&old_thread->context, &thread_running->context);
     } else
     {
-        printf("thread %d unlock and continue: empty block queue\n", running->thread_id);
+        printf("thread %d unlock and continue: empty block queue\n", thread_running->thread_id);
     }
 }
 
@@ -248,14 +248,14 @@ static void test_thread(void) {
 
     //adding lock
     lock(&lock1);
-    printf("Thread %d entering the critical section.\n", running->thread_id);
+    printf("Thread %d entering the critical section.\n", thread_running->thread_id);
     //critical section
     for (int i = 0; i < 5000; i++)
         test_var += 1;
 
     printf("Test_thread calling thread_yield\n");
-    thread_yield();
-    printf("Thread %d return from yield.\n", running->thread_id);
+
+    printf("Thread %d return from yield.\n", thread_running->thread_id);
 
     for (int i = 0; i < 5000; i++)
         test_var += 1;
@@ -274,18 +274,18 @@ void thread_yield() {
         printf("Ready Queue is empty, return from yield()\n");
         return;
     }
-    struct Thread* old_thread = running;
+    struct Thread* old_thread = thread_running;
     enqueue(&ready_head, &ready_tail, old_thread);
     
-    running = dequeue(&ready_head, &ready_tail);
+    thread_running = dequeue(&ready_head, &ready_tail);
 
-    printf("Thread %d yielding to thread %d\n", old_thread->thread_id, running->thread_id);
+    printf("Thread %d yielding to thread %d\n", old_thread->thread_id, thread_running->thread_id);
     
     // This will stop us from running and restart the other thread
-    swapcontext(&old_thread->context, &running->context);
+    swapcontext(&old_thread->context, &thread_running->context);
 
     // The other thread yielded back to us
-    printf("Thread %d back in thread_yield\n", running->thread_id);
+    printf("Thread %d back in thread_yield\n", thread_running->thread_id);
 }
 
 // Create a thread
@@ -300,9 +300,9 @@ int thread_create(void (*thread_function)(void)) {
     enqueue(&ready_head, &ready_tail, new_thread);
     printf("2_");
 
-    printf("Thread %d in thread_create, new thread: %d\n", running->thread_id, new_thread->thread_id);
+    // printf("Thread %d in thread_create, new thread: %d\n", running->thread_id, new_thread->thread_id);
     
-    printf("Thread %d calling getcontext and makecontext\n", running->thread_id);
+    // printf("Thread %d calling getcontext and makecontext\n", running->thread_id);
     printf("3_");
 
     // First, create a valid execution context the same as the current one
@@ -318,18 +318,18 @@ int thread_create(void (*thread_function)(void)) {
     // Now create the new context and specify what function it should run
     makecontext(&(new_thread->context), test_thread, 0);
     
-    printf("Thread %d done with thread_create\n", running->thread_id);
+    // printf("Thread %d done with thread_create\n", running->thread_id);
 }
 
 // exit the current thread and delete its context 
 void thread_exit(int status) {
-    printf("Thread %d in thread_exit\n", running->thread_id);
+    printf("Thread %d in thread_exit\n", thread_running->thread_id);
     // delete the context
-    free(running->context.uc_stack.ss_sp);
-    free(running);
+    free(thread_running->context.uc_stack.ss_sp);
+    free(thread_running);
 
     // set the running thread to NULL
-    running = NULL;
+    thread_running = NULL;
 
     // yield to another thread
     thread_yield();
@@ -338,19 +338,19 @@ void thread_exit(int status) {
 void enqueue(struct Thread **head, struct Thread **tail, struct Thread* newT)
 {
     newT->next = NULL;
-    if(running == NULL){
-        running = newT;
-    }else{
-        if (*head == NULL && *tail == NULL)
-        {
-            *head = newT;
-            *tail = newT;
-        } else 
-        {
-            (*tail)->next = newT;
-            *tail = (*tail)->next;
-        }
+    // if(running == NULL){
+    //     running = newT;
+    // }else{
+    if (*head == NULL && *tail == NULL)
+    {
+        *head = newT;
+        *tail = newT;
+    } else 
+    {
+        (*tail)->next = newT;
+        *tail = (*tail)->next;
     }
+    // }
 }
 
 struct Thread* dequeue(struct Thread **head, struct Thread **tail)
