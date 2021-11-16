@@ -110,9 +110,9 @@ void task_thread_init() {
 
     printf("Main calling thread_yield\n");
 
-    thread_yield();
-    thread_yield();
-    thread_yield();
+    // thread_yield();
+    // thread_yield();
+    // thread_yield();
 }
 
 void *virtual_thread(void *parm){
@@ -204,7 +204,6 @@ lock_t lock1 = LOCK_INIT;
 int main(void) {
     printf("Main starting\n");
     
-    task_thread_init();
     // create thread for main itself
     // Do we want to use main as a thread itself? I am thinking we can use main as a control center to manage other threads
     // struct Thread *master_thread = malloc(sizeof(struct Thread));
@@ -339,15 +338,18 @@ void thread_exit(int status) {
 void enqueue(struct Thread **head, struct Thread **tail, struct Thread* newT)
 {
     newT->next = NULL;
-
-    if (*head == NULL && *tail == NULL)
-    {
-        *head = newT;
-        *tail = newT;
-    } else 
-    {
-        (*tail)->next = newT;
-        *tail = (*tail)->next;
+    if(running == NULL){
+        running = newT;
+    }else{
+        if (*head == NULL && *tail == NULL)
+        {
+            *head = newT;
+            *tail = newT;
+        } else 
+        {
+            (*tail)->next = newT;
+            *tail = (*tail)->next;
+        }
     }
 }
 
