@@ -292,7 +292,7 @@ void thread_yield() {
     // The other thread yielded back to us
     printf("Thread %d back in thread_yield\n", thread_running->thread_id);
     // This will stop us from running and restart the other thread
-    swapcontext(&old_thread->context, &main_thread_context);
+    swapcontext(&main_thread_context,&old_thread->context);
 }
 
 // Create a thread
