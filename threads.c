@@ -50,6 +50,7 @@ static struct Thread *ready_tail = NULL;
 // Thread local variable
 __thread int thread_id;
 __thread struct Thread *thread_running;
+__thread ucontext_t main_thread_context;
 pthread_mutex_t mutex_queue = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t queue_non_empty = PTHREAD_COND_INITIALIZER;
 
@@ -121,6 +122,8 @@ void *virtual_thread(void *parm){
     gData = (threadparm_t *)parm;
     thread_id = gData->id;
     thread_running = NULL;
+    printf("Getting Main Thread %d context\n", thread_id);
+    getcontext(&main_thread_context);
     printf("Thread %d initialized\n", thread_id);
     while(!is_terminated) {
 
@@ -274,15 +277,16 @@ void thread_yield() {
         printf("Ready Queue is empty, return from yield()\n");
         return;
     }
+    printf("Thread %d yielding\n", thread_running->thread_id);
     struct Thread* old_thread = thread_running;
     enqueue(&ready_head, &ready_tail, old_thread);
     
-    thread_running = dequeue(&ready_head, &ready_tail);
+    //thread_running = dequeue(&ready_head, &ready_tail);
 
-    printf("Thread %d yielding to thread %d\n", old_thread->thread_id, thread_running->thread_id);
+    //printf("Thread %d yielding to thread %d\n", old_thread->thread_id, thread_running->thread_id);
     
     // This will stop us from running and restart the other thread
-    swapcontext(&old_thread->context, &thread_running->context);
+    swapcontext(&old_thread->context, &main_thread_context);
 
     // The other thread yielded back to us
     printf("Thread %d back in thread_yield\n", thread_running->thread_id);
