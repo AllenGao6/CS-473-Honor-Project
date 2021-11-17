@@ -130,6 +130,7 @@ void *virtual_thread(void *parm){
         pthread_mutex_lock(&mutex_queue);
 
         while(ready_head == NULL) {
+            printf("Thread %d is waiting\n", thread_id);
             // add conditioning variable here to check if the ready queue is empty
             pthread_cond_wait(&queue_non_empty, &mutex_queue);
         }
