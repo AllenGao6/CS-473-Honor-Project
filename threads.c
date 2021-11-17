@@ -95,18 +95,23 @@ void thread_init(pthread_t *thread, threadparm_t *gData) {
     }
 }
 
-void task_thread_init() {
+void task_thread_init(int num_task_threads) {
 
-    // Start one other thread
-    printf("1");
-    thread_create(&test_thread); // thread 1
-        printf("2");
+    for(int i = 0; i < num_task_threads; i++) {
+        thread_create(test_thread);
+    }
+    // // Start one other thread
+    // printf("1");
+    // thread_create(&test_thread); // thread 1
+    // printf("2");
 
-    // sleep for 1 second
-    thread_create(&test_thread); // thread 2
-        printf("3");
+    // // sleep for 1 second
+    // thread_create(&test_thread); // thread 2
+    // printf("3");
 
-    thread_create(&test_thread); // thread 3
+    // thread_create(&test_thread); // thread 3
+    // thread_create(&test_thread); // thread 4
+    // thread_create(&test_thread); // thread 5
     
     printf("Main returned from thread_create\n");
 
@@ -223,7 +228,7 @@ int main(void) {
     printf("Main calling task thread_create\n");
 
     // create thread for task
-    task_thread_init();
+    task_thread_init(5);
     // initialize the thread parameter for each thread
     pthread_t thread[NUM_VIRTUAL_THREADS];
     threadparm_t gData[NUM_VIRTUAL_THREADS];
