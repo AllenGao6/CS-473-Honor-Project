@@ -53,6 +53,7 @@ static pthread_cond_t queue_non_empty = PTHREAD_COND_INITIALIZER;
 __thread int thread_id;
 __thread struct Thread *thread_running;
 __thread ucontext_t main_thread_context;
+__thread int was_switched = 0;
 pthread_mutex_t mutex_queue = PTHREAD_MUTEX_INITIALIZER;
 
 //test variable
@@ -92,7 +93,6 @@ void thread_init(pthread_t *thread, threadparm_t *gData) {
         printf("Thread %d created\n", i);
         checkResults("pthread_create()\n", rc);
     }
- 
 }
 
 void task_thread_init() {
@@ -112,9 +112,6 @@ void task_thread_init() {
 
     printf("Main calling thread_yield\n");
 
-    // thread_yield();
-    // thread_yield();
-    // thread_yield();
 }
 
 void *virtual_thread(void *parm){
@@ -124,7 +121,6 @@ void *virtual_thread(void *parm){
     thread_id = gData->id;
     thread_running = NULL;
     printf("Getting Main Thread %d context\n", thread_id);
-    getcontext(&main_thread_context);
     printf("Thread %d initialized\n", thread_id);
     while(!is_terminated) {
 
@@ -140,8 +136,14 @@ void *virtual_thread(void *parm){
         thread_running = dequeue(&ready_head, &ready_tail);
         printf("Task thread %d is running\n", thread_running->thread_id);
         // set the context of the running thread
-        setcontext(&thread_running->context);
-
+        getcontext(&main_thread_context);
+        if(was_switched == 0) {
+            // main_thread_context.uc_link = &thread_running->context;
+            // main_thread_context.uc_stack.ss_sp = thread_running->context.uc_stack.ss_sp;
+            // main_thread_context.uc_stack.ss_size = thread_running->context.uc_stack.ss_size;
+            setcontext(&thread_running->context);
+        }
+        was_switched = 0;
         printf("Virtual Thread %d is running\n", thread_id);
         printf("test_var: %d\n", test_var);
         // thread_yield();
@@ -287,7 +289,7 @@ void thread_yield() {
     //thread_running = dequeue(&ready_head, &ready_tail);
 
     //printf("Thread %d yielding to thread %d\n", old_thread->thread_id, thread_running->thread_id);
-    
+    was_switched = 1;
 
     // The other thread yielded back to us
     printf("Thread %d back in thread_yield\n", thread_running->thread_id);
