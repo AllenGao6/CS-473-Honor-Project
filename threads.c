@@ -45,6 +45,8 @@ static bool is_terminated = false;
 static int thread_counter = 0;
 static struct Thread *ready_head = NULL;
 static struct Thread *ready_tail = NULL;
+static pthread_cond_t queue_non_empty = PTHREAD_COND_INITIALIZER;
+
 // struct Thread *running = NULL;
 
 // Thread local variable
@@ -52,7 +54,6 @@ __thread int thread_id;
 __thread struct Thread *thread_running;
 __thread ucontext_t main_thread_context;
 pthread_mutex_t mutex_queue = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t queue_non_empty = PTHREAD_COND_INITIALIZER;
 
 //test variable
 static int test_var = 0;
@@ -146,6 +147,7 @@ void *virtual_thread(void *parm){
         // thread_yield();
         enqueue(&ready_head, &ready_tail, thread_running);
         thread_running = NULL;
+        pthread_cond_signal(&queue_non_empty);
         // unlock the mutex
         pthread_mutex_unlock(&mutex_queue);
         
@@ -280,17 +282,17 @@ void thread_yield() {
     }
     printf("Thread %d yielding\n", thread_running->thread_id);
     struct Thread* old_thread = thread_running;
-    enqueue(&ready_head, &ready_tail, old_thread);
-    pthread_cond_signal(&queue_non_empty);
+    //enqueue(&ready_head, &ready_tail, old_thread);
+    //pthread_cond_signal(&queue_non_empty);
     //thread_running = dequeue(&ready_head, &ready_tail);
 
     //printf("Thread %d yielding to thread %d\n", old_thread->thread_id, thread_running->thread_id);
     
-    // This will stop us from running and restart the other thread
-    swapcontext(&old_thread->context, &main_thread_context);
 
     // The other thread yielded back to us
     printf("Thread %d back in thread_yield\n", thread_running->thread_id);
+    // This will stop us from running and restart the other thread
+    swapcontext(&old_thread->context, &main_thread_context);
 }
 
 // Create a thread
