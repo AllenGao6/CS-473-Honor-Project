@@ -147,7 +147,7 @@ void *virtual_thread(void *parm){
         // thread_yield();
         enqueue(&ready_head, &ready_tail, thread_running);
         thread_running = NULL;
-        //pthread_cond_signal(&queue_non_empty);
+        pthread_cond_signal(&queue_non_empty);
         // unlock the mutex
         pthread_mutex_unlock(&mutex_queue);
         
@@ -292,8 +292,8 @@ void thread_yield() {
     // The other thread yielded back to us
     printf("Thread %d back in thread_yield\n", thread_running->thread_id);
     // This will stop us from running and restart the other thread
-    //swapcontext(&main_thread_context,&old_thread->context);
-    setcontext(&main_thread_context);
+    swapcontext(&old_thread->context,&main_thread_context);
+    //setcontext(&main_thread_context);
 
 }
 
