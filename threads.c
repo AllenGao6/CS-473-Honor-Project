@@ -147,7 +147,7 @@ void *virtual_thread(void *parm){
         // thread_yield();
         enqueue(&ready_head, &ready_tail, thread_running);
         thread_running = NULL;
-        pthread_cond_signal(&queue_non_empty);
+        //pthread_cond_signal(&queue_non_empty);
         // unlock the mutex
         pthread_mutex_unlock(&mutex_queue);
         
