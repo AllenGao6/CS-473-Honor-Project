@@ -136,7 +136,7 @@ void *virtual_thread(void *parm){
 
         // dequeue the first thread in the ready queue
         thread_running = dequeue(&ready_head, &ready_tail);
-        printf("Virtual thread %d is running\n", thread_running->thread_id);
+        printf("Task thread %d is running\n", thread_running->thread_id);
         // set the context of the running thread
         setcontext(&thread_running->context);
 
@@ -280,7 +280,7 @@ void thread_yield() {
     printf("Thread %d yielding\n", thread_running->thread_id);
     struct Thread* old_thread = thread_running;
     enqueue(&ready_head, &ready_tail, old_thread);
-    
+    pthread_cond_signal(&queue_non_empty);
     //thread_running = dequeue(&ready_head, &ready_tail);
 
     //printf("Thread %d yielding to thread %d\n", old_thread->thread_id, thread_running->thread_id);
