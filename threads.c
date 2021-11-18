@@ -39,6 +39,7 @@ typedef struct {
 
 typedef struct __lock_t lock_t;
 
+
 static bool is_terminated = false;
 
 //////// Global Variable ///////////
@@ -90,7 +91,7 @@ void thread_init(pthread_t *thread, threadparm_t *gData) {
         /* Create per-thread TLS data and pass it to the thread */
         gData[i].id = i+1;
         int rc = pthread_create(&thread[i], NULL, virtual_thread, &gData[i]);
-        printf("Thread %d created\n", i);
+        printf("Thread %d created\n", i+1);
         checkResults("pthread_create()\n", rc);
     }
 }
@@ -100,23 +101,16 @@ void task_thread_init(int num_task_threads) {
     for(int i = 0; i < num_task_threads; i++) {
         thread_create(test_thread);
     }
-    // // Start one other thread
-    // printf("1");
-    // thread_create(&test_thread); // thread 1
-    // printf("2");
-
-    // // sleep for 1 second
-    // thread_create(&test_thread); // thread 2
-    // printf("3");
-
-    // thread_create(&test_thread); // thread 3
-    // thread_create(&test_thread); // thread 4
-    // thread_create(&test_thread); // thread 5
     
     printf("Main returned from thread_create\n");
 
     printf("Main calling thread_yield\n");
 
+}
+
+void pre_swap_thread(ucontext_t *context_from, ucontext_t *context_to) {
+    swapcontext(context_from, context_to);
+    pthread_mutex_unlock(&mutex_queue);
 }
 
 void *virtual_thread(void *parm){
@@ -125,30 +119,41 @@ void *virtual_thread(void *parm){
     gData = (threadparm_t *)parm;
     thread_id = gData->id;
     thread_running = NULL;
+    getcontext(&main_thread_context);
     printf("Getting Main Thread %d context\n", thread_id);
     printf("Thread %d initialized\n", thread_id);
-    while(!is_terminated) {
+    while(true) {
 
         pthread_mutex_lock(&mutex_queue);
-
+       
+        if(is_terminated) {
+            pthread_mutex_unlock(&mutex_queue);
+            break;
+        }
         while(ready_head == NULL) {
             printf("Thread %d is waiting\n", thread_id);
             // add conditioning variable here to check if the ready queue is empty
             pthread_cond_wait(&queue_non_empty, &mutex_queue);
-        }
+            if(is_terminated) {
+                pthread_mutex_unlock(&mutex_queue);
+                goto exit;
+            }
 
+        }
         // dequeue the first thread in the ready queue
         thread_running = dequeue(&ready_head, &ready_tail);
         printf("Task thread %d is running\n", thread_running->thread_id);
         // set the context of the running thread
-        getcontext(&main_thread_context);
-        if(was_switched == 0) {
-            // main_thread_context.uc_link = &thread_running->context;
-            // main_thread_context.uc_stack.ss_sp = thread_running->context.uc_stack.ss_sp;
-            // main_thread_context.uc_stack.ss_size = thread_running->context.uc_stack.ss_size;
-            setcontext(&thread_running->context);
-        }
-        was_switched = 0;
+        
+        // if(was_switched == 0) {
+        //     // main_thread_context.uc_link = &thread_running->context;
+        //     // main_thread_context.uc_stack.ss_sp = thread_running->context.uc_stack.ss_sp;
+        //     // main_thread_context.uc_stack.ss_size = thread_running->context.uc_stack.ss_size;
+        pre_swap_thread(&main_thread_context, &thread_running->context);
+        pthread_mutex_lock(&mutex_queue);
+        //swapcontext(&main_thread_context, &thread_running->context);
+
+        //was_switched = 0;
         printf("Virtual Thread %d is running\n", thread_id);
         printf("test_var: %d\n", test_var);
         // thread_yield();
@@ -159,6 +164,8 @@ void *virtual_thread(void *parm){
         pthread_mutex_unlock(&mutex_queue);
         
     }
+    exit:
+    
     printf("Virtual Thread %d is exiting\n", thread_id);
 }
 
@@ -183,6 +190,7 @@ void lock(lock_t *lock)
                 old_thread->thread_id,thread_running->thread_id);
             swapcontext(&old_thread->context, &thread_running->context);
         } else {
+            swapcontext(&thread_running->context, &main_thread_context);
             printf("ready queue should not be empty while the critical section is locked!\n");
         }
     }
