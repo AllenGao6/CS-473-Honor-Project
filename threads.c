@@ -86,12 +86,12 @@ static void checkResults(char* string, int val) {
 void thread_init(pthread_t *thread, threadparm_t *gData) {
     
 
-    printf("Create/start threads\n");
+    printf("Create/start Virtual CPUs\n");
     for (int i=0; i < NUM_VIRTUAL_THREADS; i++) { 
         /* Create per-thread TLS data and pass it to the thread */
         gData[i].id = i+1;
         int rc = pthread_create(&thread[i], NULL, virtual_thread, &gData[i]);
-        printf("Thread %d created\n", i+1);
+        printf("Virtual CPU %d created\n", i+1);
         checkResults("pthread_create()\n", rc);
     }
 }
@@ -103,14 +103,6 @@ void task_thread_init(int num_task_threads) {
     }
     
     printf("Main returned from thread_create\n");
-
-    printf("Main calling thread_yield\n");
-
-}
-
-void pre_swap_thread(ucontext_t *context_from, ucontext_t *context_to) {
-    swapcontext(context_from, context_to);
-    pthread_mutex_unlock(&mutex_queue);
 }
 
 void *virtual_thread(void *parm){
@@ -120,8 +112,7 @@ void *virtual_thread(void *parm){
     thread_id = gData->id;
     thread_running = NULL;
     getcontext(&main_thread_context);
-    printf("Getting Main Thread %d context\n", thread_id);
-    printf("Thread %d initialized\n", thread_id);
+    printf("Virtual CPU %d initialized\n", thread_id);
     while(true) {
 
         pthread_mutex_lock(&mutex_queue);
@@ -131,7 +122,7 @@ void *virtual_thread(void *parm){
             break;
         }
         while(ready_head == NULL) {
-            printf("Thread %d is waiting\n", thread_id);
+            printf("Virtual CPU %d is waiting\n", thread_id);
             // add conditioning variable here to check if the ready queue is empty
             pthread_cond_wait(&queue_non_empty, &mutex_queue);
             if(is_terminated) {
@@ -142,21 +133,16 @@ void *virtual_thread(void *parm){
         }
         // dequeue the first thread in the ready queue
         thread_running = dequeue(&ready_head, &ready_tail);
-        printf("Task thread %d is running\n", thread_running->thread_id);
-        // set the context of the running thread
+        pthread_mutex_unlock(&mutex_queue);
         
-        // if(was_switched == 0) {
-        //     // main_thread_context.uc_link = &thread_running->context;
-        //     // main_thread_context.uc_stack.ss_sp = thread_running->context.uc_stack.ss_sp;
-        //     // main_thread_context.uc_stack.ss_size = thread_running->context.uc_stack.ss_size;
-        pre_swap_thread(&main_thread_context, &thread_running->context);
-        pthread_mutex_lock(&mutex_queue);
-        //swapcontext(&main_thread_context, &thread_running->context);
+        printf("Virtual CPU %d is about to execute Task thread %d\n", 
+            thread_id, thread_running->thread_id);
+        // start executing the task thread
+        swapcontext(&main_thread_context, &thread_running->context);   
+        printf("Virtual CPU %d finishes executing Task thread %d\n", 
+            thread_id, thread_running->thread_id);
 
-        //was_switched = 0;
-        printf("Virtual Thread %d is running\n", thread_id);
-        printf("test_var: %d\n", test_var);
-        // thread_yield();
+        pthread_mutex_lock(&mutex_queue);
         enqueue(&ready_head, &ready_tail, thread_running);
         thread_running = NULL;
         pthread_cond_signal(&queue_non_empty);
@@ -166,7 +152,7 @@ void *virtual_thread(void *parm){
     }
     exit:
     
-    printf("Virtual Thread %d is exiting\n", thread_id);
+    printf("Virtual CPu %d is exiting\n", thread_id);
 }
 
 void lock(lock_t *lock)
@@ -274,17 +260,10 @@ static void test_thread(void) {
     for (int i = 0; i < 5000; i++)
         test_var += 1;
 
-    // printf("Test_thread calling thread_yield\n");
+    printf("Exiting critical section. test_val: %d\n", test_var);
 
-    // printf("Thread %d return from yield.\n", thread_running->thread_id);
-
-    // for (int i = 0; i < 5000; i++)
-    //     test_var += 1;
-
-    //unlocking
     unlock(&lock1);
 
-    printf("Exiting critical section. test_val: %d\n", test_var);
     thread_yield();
     //thread_exit(0);
 }
@@ -324,16 +303,9 @@ int thread_create(void (*thread_function)(void)) {
     enqueue(&ready_head, &ready_tail, new_thread);
     printf("2_");
 
-    // printf("Thread %d in thread_create, new thread: %d\n", running->thread_id, new_thread->thread_id);
-    
-    // printf("Thread %d calling getcontext and makecontext\n", running->thread_id);
-    printf("3_");
-
     // First, create a valid execution context the same as the current one
     getcontext(&(new_thread->context));
-    printf("4_");
-
-    // maybe we should set up uclink?
+    printf("3_\n");
 
     // Now set up its stack
     new_thread->context.uc_stack.ss_sp = malloc(8192);
@@ -341,8 +313,6 @@ int thread_create(void (*thread_function)(void)) {
 
     // Now create the new context and specify what function it should run
     makecontext(&(new_thread->context), test_thread, 0);
-    
-    // printf("Thread %d done with thread_create\n", running->thread_id);
 }
 
 // exit the current thread and delete its context 
