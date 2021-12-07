@@ -134,7 +134,6 @@ void *virtual_thread(void *parm){
                 pthread_mutex_unlock(&ready_queue.queue_lock);
                 goto exit;
             }
-
         }
         // dequeue the first thread in the ready queue
         // this part is wrong
@@ -163,7 +162,8 @@ void *virtual_thread(void *parm){
             enqueue(&ret_queue->head, &ret_queue->tail, thread_running);
             // reset thread_running
             thread_running = NULL;
-            pthread_cond_signal(&queue_non_empty);
+            if (ret_queue == &ready_queue)
+                pthread_cond_signal(&queue_non_empty);
             pthread_mutex_unlock(&ret_queue->queue_lock);
 
             // reset ret_queue
@@ -210,6 +210,7 @@ void unlock(lock_t *lock)
 
         pthread_mutex_lock(&ready_queue.queue_lock);
         enqueue(&ready_queue.head, &ready_queue.tail, blockQueue_head);
+        pthread_cond_signal(&queue_non_empty);
         pthread_mutex_unlock(&ready_queue.queue_lock);
 
         printf("thread %d unlock and thread %d now in ready_queue\n", 
