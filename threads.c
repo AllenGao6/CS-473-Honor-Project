@@ -18,6 +18,7 @@
 #define NUM_VIRTUAL_THREADS 3
 #define LOCK_INIT {ATOMIC_FLAG_INIT, QUEUE_INIT}
 #define QUEUE_INIT {NULL, NULL, PTHREAD_MUTEX_INITIALIZER}
+#define THREAD_EXIT (void*)1
 
 ///////// Type Defination //////////
 struct Thread {
@@ -58,6 +59,7 @@ __thread int thread_id;
 __thread struct Thread *thread_running;
 __thread ucontext_t main_thread_context;
 __thread int was_switched = 0;
+__thread queue_t* ret_queue; // specify where to put the return task
 
 //test variable
 static int test_var = 0;
@@ -114,6 +116,7 @@ void *virtual_thread(void *parm){
     thread_id = gData->id;
     thread_running = NULL;
     getcontext(&main_thread_context);
+
     printf("Virtual CPU %d initialized\n", thread_id);
     while(true) {
 
@@ -134,6 +137,7 @@ void *virtual_thread(void *parm){
 
         }
         // dequeue the first thread in the ready queue
+        // this part is wrong
         thread_running = dequeue(&ready_queue.head, &ready_queue.tail);
         pthread_mutex_unlock(&ready_queue.queue_lock);
         
@@ -141,16 +145,36 @@ void *virtual_thread(void *parm){
             thread_id, thread_running->thread_id);
         // start executing the task thread
         swapcontext(&main_thread_context, &thread_running->context);   
-        printf("Virtual CPU %d finishes executing Task thread %d\n", 
-            thread_id, thread_running->thread_id);
 
-        pthread_mutex_lock(&ready_queue.queue_lock);
-        enqueue(&ready_queue.head, &ready_queue.tail, thread_running);
-        thread_running = NULL;
-        pthread_cond_signal(&queue_non_empty);
-        // unlock the mutex
-        pthread_mutex_unlock(&ready_queue.queue_lock);
+        // ret_queue could be either block queue or ready queue
+        // it's set by previous running thread (before swapcontext return)
         
+        // by default, ret_queue set to ready queue
+        if (ret_queue != THREAD_EXIT) 
+        {
+            printf("Virtual CPU %d yield from Task thread %d\n", 
+                thread_id, thread_running->thread_id);
+
+            // by default, return the task to ready queue
+            if (ret_queue == NULL)
+                ret_queue = &ready_queue;
+
+            pthread_mutex_lock(&ret_queue->queue_lock);
+            enqueue(&ret_queue->head, &ret_queue->tail, thread_running);
+            // reset thread_running
+            thread_running = NULL;
+            pthread_cond_signal(&queue_non_empty);
+            pthread_mutex_unlock(&ret_queue->queue_lock);
+
+            // reset ret_queue
+            ret_queue = NULL; 
+        } else {
+            printf("Virtual CPU %d finishes executing Task thread %d\n", 
+                thread_id, thread_running->thread_id);
+        }
+
+        // if ret_queue == THREAD_EXIT,
+        // do not put it back to any queue
     }
     exit:
     
@@ -159,27 +183,17 @@ void *virtual_thread(void *parm){
 
 void lock(lock_t *lock)
 {
+    bool isFirstTimeBlocked = true;
     // loop until block clear
     while (atomic_flag_test_and_set(&lock->flag))
     {
-        // put the running block to block queue if blocked
-        enqueue(&lock->block_queue.head, &lock->block_queue.tail, thread_running);
-
-        // the ready queue shouldn't be empty
-        if (ready_queue.head != NULL && ready_queue.tail != NULL)
-        {
-            // then yield to another thread at ready queue
-            struct Thread* old_thread = thread_running;
-
-            thread_running = dequeue(&ready_queue.head, &ready_queue.tail);
-
-            printf("thread %d blocked: yield to head of ready queue - thread %d\n", 
-                old_thread->thread_id,thread_running->thread_id);
-            swapcontext(&old_thread->context, &thread_running->context);
-        } else {
-            swapcontext(&thread_running->context, &main_thread_context);
-            printf("ready queue should not be empty while the critical section is locked!\n");
+        if (isFirstTimeBlocked) {
+            ret_queue = &lock->block_queue;
+            isFirstTimeBlocked = false;
         }
+
+        printf("thread %d is blocked, yield\n", thread_running->thread_id);
+        thread_yield();
     }
 }
 
@@ -190,18 +204,19 @@ void unlock(lock_t *lock)
     // yield to the head of blocking queue
     if (lock->block_queue.head != NULL)
     {
-        struct Thread* old_thread = thread_running;
-        enqueue(&ready_queue.head, &ready_queue.tail, old_thread);
+        pthread_mutex_lock(&lock->block_queue.queue_lock);
+        struct Thread* blockQueue_head = dequeue(&lock->block_queue.head, &lock->block_queue.tail);
+        pthread_mutex_unlock(&lock->block_queue.queue_lock);
 
-        thread_running = dequeue(&lock->block_queue.head, &lock->block_queue.tail);
+        pthread_mutex_lock(&ready_queue.queue_lock);
+        enqueue(&ready_queue.head, &ready_queue.tail, blockQueue_head);
+        pthread_mutex_unlock(&ready_queue.queue_lock);
 
-        printf("thread %d unlock: yield to head of block queue %d\n", 
-            old_thread->thread_id,thread_running->thread_id);
-        swapcontext(&old_thread->context, &thread_running->context);
+        printf("thread %d unlock and thread %d now in ready_queue\n", 
+            thread_running->thread_id, blockQueue_head->thread_id);
     } else
-    {
-        printf("thread %d unlock and continue: empty block queue\n", thread_running->thread_id);
-    }
+        printf("thread %d unlock and continue: empty block queue\n", 
+            thread_running->thread_id);
 }
 
 lock_t lock1 = LOCK_INIT;
@@ -231,16 +246,6 @@ int main(void) {
     // initialize pthread as virtual thread to handle the ready_queue
     thread_init(thread, gData);
 
-    // ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
-
-    printf("Main calling task thread_create\n");
-
-    // create thread for task
-    //task_thread_init();
-    
-
-    // ---------- ---------- ---------- ---------- ---------- ---------- ---------- ---------- ----------
-    printf("Wait for the threads to complete, and release their resources\n");
     for (int i=0; i < NUM_VIRTUAL_THREADS; i++) {
         int rc = pthread_join(thread[i], NULL);
         checkResults("pthread_join()\n", rc);
@@ -260,36 +265,20 @@ static void test_thread(void) {
     //critical section
     for (int i = 0; i < 5000; i++)
         test_var += 1;
+    sleep(2);
 
     printf("Exiting critical section. test_val: %d\n", test_var);
-
     unlock(&lock1);
 
-    thread_yield();
-    //thread_exit(0);
+    thread_exit(0);
 }
 
-// Yield to another thread
+// Yield back to main thread
 void thread_yield() {
-    if (ready_queue.head == NULL && ready_queue.tail == NULL) {
-        printf("Ready Queue is empty, return from yield()\n");
-        return;
-    }
-    printf("Thread %d yielding\n", thread_running->thread_id);
     struct Thread* old_thread = thread_running;
-    //enqueue(&ready_head, &ready_tail, old_thread);
-    //pthread_cond_signal(&queue_non_empty);
-    //thread_running = dequeue(&ready_head, &ready_tail);
 
-    //printf("Thread %d yielding to thread %d\n", old_thread->thread_id, thread_running->thread_id);
-    was_switched = 1;
-
-    // The other thread yielded back to us
-    printf("Thread %d back in thread_yield\n", thread_running->thread_id);
     // This will stop us from running and restart the other thread
     swapcontext(&old_thread->context,&main_thread_context);
-    //setcontext(&main_thread_context);
-
 }
 
 // Create a thread
@@ -318,13 +307,14 @@ int thread_create(void (*thread_function)(void)) {
 
 // exit the current thread and delete its context 
 void thread_exit(int status) {
-    printf("Thread %d in thread_exit\n", thread_running->thread_id);
+    printf("Thread %d exits with status: %d\n", 
+        thread_running->thread_id, status);
+
     // delete the context
     free(thread_running->context.uc_stack.ss_sp);
     free(thread_running);
 
-    // set the running thread to NULL
-    thread_running = NULL;
+    ret_queue = THREAD_EXIT;
 
     // yield to another thread
     thread_yield();
