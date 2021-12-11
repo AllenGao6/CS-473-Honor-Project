@@ -183,14 +183,10 @@ void *virtual_thread(void *parm){
 
 void lock(lock_t *lock)
 {
-    bool isFirstTimeBlocked = true;
     // loop until block clear
     while (atomic_flag_test_and_set(&lock->flag))
     {
-        if (isFirstTimeBlocked) {
-            ret_queue = &lock->block_queue;
-            isFirstTimeBlocked = false;
-        }
+        ret_queue = &lock->block_queue;
 
         printf("thread %d is blocked, yield\n", thread_running->thread_id);
         thread_yield();
